@@ -826,7 +826,6 @@ void PlyFile::PlyFileImpl::parse_data(std::istream & is, bool firstPass)
     const auto start = is.tellg();
 
     uint32_t listSize = 0;
-    size_t dummyCount = 0;
     std::string skip_ascii_buffer;
 
     // Special case mirroring read_property_binary but for list types; this
@@ -856,22 +855,24 @@ void PlyFile::PlyFileImpl::parse_data(std::istream & is, bool firstPass)
 
     if (isBinary)
     {
-        read = [this, &listSize, &dummyCount, &read_list_binary](PropertyLookup & f, const PlyProperty & p, uint8_t * dest, size_t & destOffset, size_t destSize, std::istream & _is)
+        read = [this, &listSize, &read_list_binary](PropertyLookup & f, const PlyProperty & p, uint8_t * dest, size_t & destOffset, size_t destSize, std::istream & _is)
         {
             if (!p.isList)
             {
                 return read_property_binary(f.prop_stride, dest + destOffset, destOffset, destSize, _is);
             }
+            size_t dummyCount = 0;
             read_list_binary(p.listType, &listSize, dummyCount, f.list_stride, _is); // the list size
             return read_property_binary(f.prop_stride * listSize, dest + destOffset, destOffset, destSize, _is); // properties in list
         };
-        skip = [this, &listSize, &dummyCount, &read_list_binary](PropertyLookup & f, const PlyProperty & p, std::istream & _is) noexcept
+        skip = [this, &listSize, &read_list_binary](PropertyLookup & f, const PlyProperty & p, std::istream & _is) noexcept
         {
             if (!p.isList)
             {
                 _is.read((char*)scratch, f.prop_stride);
                 return f.prop_stride;
             }
+            size_t dummyCount = 0;
             read_list_binary(p.listType, &listSize, dummyCount, f.list_stride, _is); // the list size (does not count for memory alloc)
             auto bytes_to_skip = f.prop_stride * listSize;
             _is.ignore(bytes_to_skip);
@@ -880,7 +881,7 @@ void PlyFile::PlyFileImpl::parse_data(std::istream & is, bool firstPass)
     }
     else
     {
-        read = [this, &listSize, &dummyCount](PropertyLookup & f, const PlyProperty & p, uint8_t * dest, size_t & destOffset, size_t destSize, std::istream & _is)
+        read = [this, &listSize](PropertyLookup & f, const PlyProperty & p, uint8_t * dest, size_t & destOffset, size_t destSize, std::istream & _is)
         {
             if (!p.isList)
             {
@@ -888,19 +889,20 @@ void PlyFile::PlyFileImpl::parse_data(std::istream & is, bool firstPass)
             }
             else
             {
+                size_t dummyCount = 0;
                 read_property_ascii(p.listType, f.list_stride, &listSize, dummyCount, sizeof(listSize), _is); // the list size
                 for (size_t i = 0; i < listSize; ++i)
                 {
-                    read_property_ascii(p.propertyType, f.prop_stride, dest + destOffset, destOffset, destOffset, _is);
+                    read_property_ascii(p.propertyType, f.prop_stride, dest + destOffset, destOffset, destSize, _is);
                 }
             }
         };
-        skip = [this, &listSize, &dummyCount, &skip_ascii_buffer](PropertyLookup & f, const PlyProperty & p, std::istream & _is) noexcept
+        skip = [this, &listSize, &skip_ascii_buffer](PropertyLookup & f, const PlyProperty & p, std::istream & _is) noexcept
         {
             skip_ascii_buffer.clear();
             if (p.isList)
             {
-                dummyCount = 0;
+                size_t dummyCount = 0;
                 read_property_ascii(p.listType, f.list_stride, &listSize, dummyCount, sizeof(listSize), _is); // the list size (does not count for memory alloc)
                 for (size_t i = 0; i < listSize; ++i) _is >> skip_ascii_buffer; // properties in list
                 return listSize * f.prop_stride;
